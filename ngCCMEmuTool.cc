@@ -116,8 +116,10 @@ int main(int argc, char* argv[])
     int freq = 50000;
     sub_i2c_freq(sh, &freq);
 
-    for(const I2CCommand& com : comVec)
+    //for(const I2CCommand& com : comVec)
+    for(std::vector<I2CCommand>::const_iterator icom = comVec.begin(); icom != comVec.end(); ++icom)
     {
+        const I2CCommand& com = *icom;
         if(com.command == 'r')
         {
             printf("Execute I2C read: 0x%02x %d", com.sAddr & 0xff, com.len);
@@ -177,7 +179,7 @@ bool parseI2C(const char * const rawCommand, std::vector<I2CCommand>& comVec)
         int delay;
         if(sscanf(tbuf, "%i", &delay) != 1) return false;
 
-        comVec.emplace_back(I2CCommand(command, 0, delay));
+        comVec.push_back(I2CCommand(command, 0, delay));
     }
     else if(command == 'w')
     {
@@ -197,7 +199,7 @@ bool parseI2C(const char * const rawCommand, std::vector<I2CCommand>& comVec)
         if(nBytes == 0) return false;
         buff[nBytes] = '\0';
 
-        comVec.emplace_back(I2CCommand(command, sAddr, nBytes, buff));
+        comVec.push_back(I2CCommand(command, sAddr, nBytes, buff));
         if(buff) delete [] buff;
     }
     else if(command == 'r')
@@ -207,18 +209,18 @@ bool parseI2C(const char * const rawCommand, std::vector<I2CCommand>& comVec)
         if(sscanf(tbuf, "%i %[^\n]", &sAddr, tbuf) != 2) return false;
         if(sscanf(tbuf, "%i", &len) != 1) return false;
 
-        comVec.emplace_back(I2CCommand(command, sAddr, len));
+        comVec.push_back(I2CCommand(command, sAddr, len));
     }
     else if(command == 'e')
     {
         char * buff = new char[strlen(rawCommand) + 1];
         if(sscanf(tbuf, "%s", buff) != 1) return false;
-        comVec.emplace_back(I2CCommand(command, 0, strlen(buff) + 1, buff));
+        comVec.push_back(I2CCommand(command, 0, strlen(buff) + 1, buff));
         if(buff) delete [] buff;
     }
     else if(command == 'c')
     {
-        comVec.emplace_back(I2CCommand(command, 0, 1));
+        comVec.push_back(I2CCommand(command, 0, 1));
     }
 
     if(tbuf) delete [] tbuf;
