@@ -130,13 +130,17 @@ int main(int argc, char* argv[])
         {"i2c",   required_argument, 0, 'i'},
         {"file",  required_argument, 0, 'f'},
         {"dev",   required_argument, 0, 'd'},
+        {"test",        no_argument, 0, 't'},
+        {"slot",  required_argument, 0, 'S'}
      };
 
     std::vector<I2CCommand> comVec;
     int devNum = 1;
     int freq = 50000;
+    int slotNum = 1;
+    bool runTest = false;
 
-    while((opt = getopt_long(argc, argv, "f:i:d:v:", long_options, &option_index)) != -1)
+    while((opt = getopt_long(argc, argv, "tf:i:d:v:S:", long_options, &option_index)) != -1)
     {
         if(opt == 'i')
         {
@@ -164,6 +168,14 @@ int main(int argc, char* argv[])
         {
             freq = int(atoi(optarg));
         }
+        else if(opt == 't')
+        {
+            runTest = true;
+        }
+        else if(opt == 'S')
+        {
+            slotNum = int(atoi(optarg)) - 1;
+        }
         //case 'P':
         //    PM_VOUT_NOM = atof(optarg);
         //    pSet = true;
@@ -188,7 +200,10 @@ int main(int argc, char* argv[])
     sub_i2c_config(sh, 0, 0);
     sub_i2c_freq(sh, &freq);
 
-    testQIECard(sh, 4, 4);
+    if(runTest)
+    {
+        testQIECard(sh, 4, slotNum);
+    }
 
     for(const I2CCommand& com : comVec)
     {
