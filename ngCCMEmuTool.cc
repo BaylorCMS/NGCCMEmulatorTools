@@ -355,7 +355,7 @@ void testQIECard(sub_handle sh, int iRM, int iSlot)
     int bridgeAddr = SADDR_BRIDGE_BASE + iSlot;
 
     //Set Emulator MUX
-    buff[0] = 0x01;
+    buff[0] = mux_chan;
     sub_i2c_write(sh, 0x70, 0, 0, buff, 1);
     usleep(100000);
     //Access bridge ID regesters
