@@ -180,7 +180,7 @@ int main(int argc, char* argv[])
         }
         else if(opt == 'M')
         {
-            rmNum = int(atoi(optarg)) - 1;
+            rmNum = int(atoi(optarg));
         }
         //case 'P':
         //    PM_VOUT_NOM = atof(optarg);
