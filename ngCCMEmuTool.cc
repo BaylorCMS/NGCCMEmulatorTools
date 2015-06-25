@@ -131,16 +131,18 @@ int main(int argc, char* argv[])
         {"file",  required_argument, 0, 'f'},
         {"dev",   required_argument, 0, 'd'},
         {"test",        no_argument, 0, 't'},
-        {"slot",  required_argument, 0, 'S'}
+        {"slot",  required_argument, 0, 'S'},
+        {"rm" ,   required_argument, 0, 'M'}
      };
 
     std::vector<I2CCommand> comVec;
     int devNum = 1;
     int freq = 50000;
     int slotNum = 1;
+    int rmNum = 4;
     bool runTest = false;
 
-    while((opt = getopt_long(argc, argv, "tf:i:d:v:S:", long_options, &option_index)) != -1)
+    while((opt = getopt_long(argc, argv, "tf:i:d:v:S:M:", long_options, &option_index)) != -1)
     {
         if(opt == 'i')
         {
@@ -176,6 +178,10 @@ int main(int argc, char* argv[])
         {
             slotNum = int(atoi(optarg)) - 1;
         }
+        else if(opt == 'M')
+        {
+            rmNum = int(atoi(optarg)) - 1;
+        }
         //case 'P':
         //    PM_VOUT_NOM = atof(optarg);
         //    pSet = true;
@@ -202,7 +208,7 @@ int main(int argc, char* argv[])
 
     if(runTest)
     {
-        testQIECard(sh, 4, slotNum);
+        testQIECard(sh, rmNum, slotNum);
     }
 
     for(const I2CCommand& com : comVec)
@@ -326,6 +332,22 @@ void printBuff(const char * const buff, const int length)
 
 void testQIECard(sub_handle sh, int iRM, int iSlot)
 {
+    char mux_chan;
+    switch(iRM)
+    {
+    case 1:
+        mux_chan = 0x02;
+        break;
+    case 2:
+        break;
+    case 3:
+        break;
+    case 4:
+        mux_chan = 0x01;
+        break;
+        
+    }
+
     bool passTests = true;
     
     char buff[128];
