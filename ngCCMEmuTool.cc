@@ -53,6 +53,7 @@
 #define IGLOO2_REG_WTECTR         0x14
 #define IGLOO2_REG_CAPIDERR1      0x15
 #define IGLOO2_REG_CAPIDERR2      0x16
+#define IGLOO2_REG_INPUTSPY       0x33
 #define IGLOO2_REG_QIEPHASE1      0x60
 #define IGLOO2_REG_QIEPHASE2      0x61
 #define IGLOO2_REG_QIEPHASE3      0x62
@@ -121,6 +122,10 @@ void printBuff(const char * const buff, const int length);
 
 void testQIECard(sub_handle sh, int iRM, int iSlot);
 
+void readQIECard(sub_handle sh, int iRM, int iSlot);
+void printData(char * buff);
+int interleave(char c0, char c1);
+
 int main(int argc, char* argv[])
 {
     int opt;
@@ -131,6 +136,7 @@ int main(int argc, char* argv[])
         {"file",  required_argument, 0, 'f'},
         {"dev",   required_argument, 0, 'd'},
         {"test",        no_argument, 0, 't'},
+        {"read",        no_argument, 0, 'r'},
         {"slot",  required_argument, 0, 'S'},
         {"rm" ,   required_argument, 0, 'M'}
      };
@@ -141,8 +147,9 @@ int main(int argc, char* argv[])
     int slotNum = 1;
     int rmNum = 4;
     bool runTest = false;
+    bool readData = false;
 
-    while((opt = getopt_long(argc, argv, "tf:i:d:v:S:M:", long_options, &option_index)) != -1)
+    while((opt = getopt_long(argc, argv, "trf:i:d:v:S:M:", long_options, &option_index)) != -1)
     {
         if(opt == 'i')
         {
@@ -173,6 +180,10 @@ int main(int argc, char* argv[])
         else if(opt == 't')
         {
             runTest = true;
+        }
+        else if(opt == 'r')
+        {
+            readData = true;
         }
         else if(opt == 'S')
         {
@@ -209,6 +220,11 @@ int main(int argc, char* argv[])
     if(runTest)
     {
         testQIECard(sh, rmNum, slotNum);
+    }
+
+    if(readData)
+    {
+        readQIECard(sh, rmNum, slotNum);
     }
 
     for(const I2CCommand& com : comVec)
@@ -339,13 +355,16 @@ void testQIECard(sub_handle sh, int iRM, int iSlot)
         mux_chan = 0x02;
         break;
     case 2:
+        mux_chan = 0x20;
         break;
     case 3:
         break;
     case 4:
         mux_chan = 0x01;
         break;
-        
+    case 5:
+        mux_chan = 0x10;
+        break;
     }
 
     bool passTests = true;
@@ -586,8 +605,8 @@ void testQIECard(sub_handle sh, int iRM, int iSlot)
     sub_i2c_write(sh, SADDR_IGLOO2, 0, 0, buff, 1);
     sub_i2c_read(sh, SADDR_IGLOO2, 0, 0, buff, 4);
     //Expect 0
-    if(sub_i2c_status == 0x00 && (buff[0]&0xff) == 0x00 && (buff[1]&0xff) == 0x00 && (buff[2]&0xff) == 0x00 && (buff[3]&0xff) == 0x00) printf("PASS: Igloo2 Cap Errors 1\n");
-    else                                                                                                                               printf("FAILED: Igloo2 Cap Errors 1\n");
+    if(sub_i2c_status == 0x00 && (buff[0]&0xff) == 0x00 && (buff[1]&0xff) == 0x00 && (buff[2]&0xff) == 0x00 && (buff[3]&0xff) == 0x00) printf("PASS: Igloo2 Cap Errors 2\n");
+    else                                                                                                                               printf("FAILED: Igloo2 Cap Errors 2\n");
 
     //test readback of scratch register
     buff[0] = IGLOO2_REG_SCRATCH;
@@ -620,4 +639,135 @@ void testQIECard(sub_handle sh, int iRM, int iSlot)
     buff[0] = BRIDGE_REG_QIEDC1;
     sub_i2c_write(sh, bridgeAddr, 0, 0, buff, 1);
     sub_i2c_read(sh, bridgeAddr, 0, 0, buff, 48);
+}
+
+void readQIECard(sub_handle sh, int iRM, int iSlot)
+{
+    char mux_chan;
+    switch(iRM)
+    {
+    case 1:
+        mux_chan = 0x02;
+        break;
+    case 2:
+        mux_chan = 0x20;
+        break;
+    case 3:
+        break;
+    case 4:
+        mux_chan = 0x01;
+        break;        
+    }
+
+    char buff[128];
+
+    int bridgeAddr = SADDR_BRIDGE_BASE + iSlot;
+
+    //Set Emulator MUX
+    buff[0] = mux_chan;
+    sub_i2c_write(sh, 0x70, 0, 0, buff, 1);
+    usleep(100000);
+
+    //Set I2X MUX to point to Igloo2
+    buff[0] = BRIDGE_REG_I2CSELECT;
+    buff[1] = BRIDGE_I2CMUX_IGLOO2;
+    buff[2] = 0x00;
+    buff[3] = 0x00;
+    buff[4] = 0x00;
+    sub_i2c_write(sh, bridgeAddr, 0, 0, buff, 5);
+
+    //Activate spy bugger fill
+    buff[0] = IGLOO2_REG_CNTRREG;
+    buff[1] = 0x02; //fill spy buffer
+    buff[2] = 0x00;
+    buff[3] = 0x00;
+    buff[4] = 0x00;
+    sub_i2c_write(sh, SADDR_IGLOO2, 0, 0, buff, 5);
+
+    usleep(10);
+
+    buff[0] = IGLOO2_REG_CNTRREG;
+    buff[1] = 0x00;
+    buff[2] = 0x00;
+    buff[3] = 0x00;
+    buff[4] = 0x00;
+    sub_i2c_write(sh, SADDR_IGLOO2, 0, 0, buff, 5);
+
+    //wait for fifo to fill
+    usleep(100000);
+    
+    //read spy buffer (512 entries)
+    for(int iEntry = 0; iEntry < 512; ++iEntry)
+    {
+        //Set spy register address 
+        buff[0] = IGLOO2_REG_INPUTSPY;
+        sub_i2c_write(sh, SADDR_IGLOO2, 0, 0, buff, 1);
+
+        //read spy register
+        sub_i2c_read(sh, SADDR_IGLOO2, 0, 0, buff, 25);
+
+        printf("Event %d\n", iEntry);
+        printData(buff);
+    }
+    
+}
+
+void printData(char * buff)
+{
+//000: f6 70 f6 70 f6 70 f6 70
+//008: f6 70 f4 70 f4 72 f6 70
+//016: f4 72 f6 70 f4 70 f4 70
+//024: 34
+
+    const char BITMASK_TDC = 0x70;  const int OFFSET_TDC = 4;
+    const char BITMASK_ADC = 0x0e;  const int OFFSET_ADC = 1;
+    const char BITMASK_EXP = 0x01;  const int OFFSET_EXP = 0;
+    const char BITMASK_CAP = 0x80;  const int OFFSET_CAP = 7;
+
+    bool fifoEmpty = (bool)buff[24] & 0x80;
+    bool fifoFull  = (bool)buff[24] & 0x40;
+    int  clkctr    =  (int)buff[24] & 0x3f;
+    int adc[12], tdc[12], capId[12], range[12];
+
+    for(int i = 0; i < 12; ++i)
+    {
+        char adc1 = (buff[(11-i)*2 + 1] & BITMASK_ADC) >> OFFSET_ADC;
+        char adc0 = (buff[(11-i)*2    ] & BITMASK_ADC) >> OFFSET_ADC;
+        char tdc1 = (buff[(11-i)*2 + 1] & BITMASK_TDC) >> OFFSET_TDC;
+        char tdc0 = (buff[(11-i)*2    ] & BITMASK_TDC) >> OFFSET_TDC;
+        char cap1 = (buff[(11-i)*2 + 1] & BITMASK_CAP) >> OFFSET_CAP;
+        char cap0 = (buff[(11-i)*2    ] & BITMASK_CAP) >> OFFSET_CAP;
+        char exp1 = (buff[(11-i)*2 + 1] & BITMASK_EXP) >> OFFSET_EXP;
+        char exp0 = (buff[(11-i)*2    ] & BITMASK_EXP) >> OFFSET_EXP;
+
+        adc[i] =   interleave(adc0, adc1);
+        tdc[i] =   interleave(tdc0, tdc1);
+        capId[i] = interleave(cap0, cap1);
+        range[i] = interleave(exp0, exp1);
+    }
+
+    printf("FIFO empty: %1d   FIFO full: %1d   clk counter: %6d\n", fifoEmpty, fifoFull, clkctr);
+    printf("       ");
+    for(int i = 0; i < 12; ++i) printf("  QIE %2d  ", i + 1);
+    printf("\nCapID: ");
+    for(int i = 0; i < 12; ++i) printf("  %6d  ", capId[i] & 0x3);
+    printf("\nADC:   ");
+    for(int i = 0; i < 12; ++i) printf("  %6d  ", adc[i]);
+    printf("\nRANGE: ");
+    for(int i = 0; i < 12; ++i) printf("  %6d  ", range[i]);
+    printf("\nTDC:   ");
+    for(int i = 0; i < 12; ++i) printf("  %6d  ", tdc[i]);
+    printf("\n\n");
+}
+
+int interleave(char c0, char c1)
+{
+    int retval = 0;
+    for(int i = 0; i < 8; ++i)
+    {
+        int bitmask = 0x01 << i;
+        retval |= ((c0 & bitmask) | ((c1 & bitmask) << 1)) << i;
+    }
+
+    return retval;
 }
