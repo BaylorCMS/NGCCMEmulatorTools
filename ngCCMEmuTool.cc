@@ -126,19 +126,25 @@ void readQIECard(sub_handle sh, int iRM, int iSlot);
 void printData(char * buff);
 int interleave(char c0, char c1);
 
+void setHV(sub_handle sh, int iRM, int chan, double voltage);
+void getHVCurrent(sub_handle sh, int iRM, int chan);
+
 int main(int argc, char* argv[])
 {
     int opt;
     int option_index = 0;
     static struct option long_options[] = {
-        {"freq",  required_argument, 0, 'v'},
-        {"i2c",   required_argument, 0, 'i'},
-        {"file",  required_argument, 0, 'f'},
-        {"dev",   required_argument, 0, 'd'},
-        {"test",        no_argument, 0, 't'},
-        {"read",        no_argument, 0, 'r'},
-        {"slot",  required_argument, 0, 'S'},
-        {"rm" ,   required_argument, 0, 'M'}
+        {"freq",    required_argument, 0, 'p'},
+        {"i2c",     required_argument, 0, 'i'},
+        {"file",    required_argument, 0, 'f'},
+        {"dev",     required_argument, 0, 'd'},
+        {"test",          no_argument, 0, 't'},
+        {"read",          no_argument, 0, 'r'},
+        {"slot",    required_argument, 0, 'S'},
+        {"voltage", required_argument, 0, 'V'},
+        {"setHV",   required_argument, 0, 'v'},
+        {"getHVI",  required_argument, 0, 'c'},
+        {"rm" ,     required_argument, 0, 'M'}
      };
 
     std::vector<I2CCommand> comVec;
@@ -148,8 +154,11 @@ int main(int argc, char* argv[])
     int rmNum = 4;
     bool runTest = false;
     bool readData = false;
+    int hvChan = 0;
+    int hvIChan = 0;
+    double voltage = 70.0;
 
-    while((opt = getopt_long(argc, argv, "trf:i:d:v:S:M:", long_options, &option_index)) != -1)
+    while((opt = getopt_long(argc, argv, "trf:i:d:v:S:M:p:V:c:", long_options, &option_index)) != -1)
     {
         if(opt == 'i')
         {
@@ -173,7 +182,7 @@ int main(int argc, char* argv[])
         {
             devNum = int(atoi(optarg));
         }
-        else if(opt == 'v')
+        else if(opt == 'p')
         {
             freq = int(atoi(optarg));
         }
@@ -192,6 +201,18 @@ int main(int argc, char* argv[])
         else if(opt == 'M')
         {
             rmNum = int(atoi(optarg));
+        }
+        else if(opt == 'V')
+        {
+            voltage = atof(optarg);
+        }
+        else if(opt == 'v')
+        {
+            hvChan = int(atoi(optarg));
+        }
+        else if(opt == 'c')
+        {
+            hvIChan = int(atoi(optarg));
         }
         //case 'P':
         //    PM_VOUT_NOM = atof(optarg);
@@ -216,6 +237,16 @@ int main(int argc, char* argv[])
 
     sub_i2c_config(sh, 0, 0);
     sub_i2c_freq(sh, &freq);
+
+    if(hvChan != 0)
+    {
+        setHV(sh, rmNum, hvChan, voltage);
+    }
+
+    if(hvIChan)
+    {
+        getHVCurrent(sh, rmNum, hvIChan);
+    }
 
     if(runTest)
     {
@@ -770,4 +801,129 @@ int interleave(char c0, char c1)
     }
 
     return retval;
+}
+
+void setHV(sub_handle sh, int iRM, int chan, double voltage)
+{
+    char buff[16];
+    int status = 0;
+    int origChan = chan;
+    
+    char mux_chan;
+    switch(iRM)
+    {
+    case 1:
+        mux_chan = 0x04;
+        break;
+    case 2:
+        mux_chan = 0x01;
+        break;
+    case 3:
+        break;
+    case 4:
+        //mux_chan = 0x01;
+        break;        
+    }
+
+    int dacAddr = 0x00;
+
+    //map sipm channel number to DAC channel
+    if(chan <= 0); //do nothing
+    else if(chan <= 32)
+    {
+        chan -= 1;
+        dacAddr = 0x54;
+    }
+    else if(chan <= 48)
+    {
+        chan -= 32 + 1;
+        dacAddr = 0x55;
+    }
+
+    //Set Emulator MUX
+    buff[0] = mux_chan;
+    status |= sub_i2c_write(sh, 0x70, 0, 0, buff, 1);
+
+    //Set config regester for DAQ (0x0400)
+    // 0x0c & reg0,reg1 - 0,0 sets the config register
+    buff[0] = 0x0c;
+    buff[1] = 0x04;
+    buff[2] = 0x00;
+    status |= sub_i2c_write(sh, dacAddr, 0, 0, buff, 3);
+
+    //calculate integer voltage
+    int iVoltage = int(voltage/(82.0*(68.87/70.0))*4096);
+    
+    //Set the voltage for the specific channel
+    buff[0] = char(0xff & chan);
+    buff[1] = char(0xc0 | (0x3f & (iVoltage >> 6)));
+    buff[2] = char(0xfc & iVoltage << 2);
+    status |= sub_i2c_write(sh, dacAddr, 0, 0, buff, 3);
+
+    if(status)
+    {
+        printf("setHV failed on channel: %d\n", origChan);
+    }
+    else
+    {
+        printf("HV channel %d set to %0.2lfV\n", origChan, voltage);
+    }
+}
+
+void getHVCurrent(sub_handle sh, int iRM, int chan)
+{
+    char buff[16];
+    int status = 0;
+    int origChan = chan;
+    float current;
+    
+    char mux_chan;
+    switch(iRM)
+    {
+    case 1:
+        mux_chan = 0x04;
+        break;
+    case 2:
+        mux_chan = 0x01;
+        break;
+    case 3:
+        break;
+    case 4:
+        //mux_chan = 0x01;
+        break;        
+    }
+
+    int adcAddr = 0x48;
+
+    //map sipm channel number to ADC channel
+    if(chan <= 0); //do nothing
+    else
+    {
+        chan = (chan - 1)/8;
+    }
+
+    //Set Emulator MUX
+    buff[0] = mux_chan;
+    status |= sub_i2c_write(sh, 0x70, 0, 0, buff, 1);
+
+    //Set config regester for ADC includes channel #
+    //0x80 - single ended
+    //0x0c - internal ref on, AD conversion on
+    buff[0] = 0x80 | ((0x7 & chan) << 4) | 0x0c;
+    status |= sub_i2c_write(sh, adcAddr, 0, 0, buff, 1);
+
+    //Get the current for the specific channel
+    status |= sub_i2c_read(sh, adcAddr, 0, 0, buff, 2);
+
+    int iCurrent = ((0x0f & buff[0]) << 8) | (0xff & buff[1]);
+    current = 2.5*float(iCurrent)/4096;
+
+    if(status)
+    {
+        printf("getHV current failed on channel: %d\n", origChan);
+    }
+    else
+    {
+        printf("HV channel %2d current is %0.2f mA\n", origChan, current);
+    }
 }
