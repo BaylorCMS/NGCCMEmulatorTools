@@ -5,6 +5,7 @@
 #include <getopt.h>
 #include <vector>
 #include <unistd.h>
+#include <cmath> 
 
 #include "SUB-20-snap-130926/lib/libsub.h"
 
@@ -123,7 +124,7 @@ void printBuff(const char * const buff, const int length);
 void testQIECard(sub_handle sh, int iRM, int iSlot);
 
 void readQIECard(sub_handle sh, int iRM, int iSlot);
-void printData(char * buff);
+void printData(char * buff, int pedArray[12][4]);
 int interleave(char c0, char c1);
 
 void setHV(sub_handle sh, int iRM, int chan, double voltage);
@@ -727,6 +728,10 @@ void readQIECard(sub_handle sh, int iRM, int iSlot)
     //wait for fifo to fill
     usleep(100000);
     
+    //ped array
+    int pedArray[12][4];
+    for(int i = 0; i < 12; ++i) for(int j = 0; j < 4; ++j) pedArray[i][j] = 0;
+
     //read spy buffer (512 entries)
     for(int iEntry = 0; iEntry < 512; ++iEntry)
     {
@@ -738,22 +743,86 @@ void readQIECard(sub_handle sh, int iRM, int iSlot)
         sub_i2c_read(sh, SADDR_IGLOO2, 0, 0, buff, 25);
 
         printf("Event %d\n", iEntry);
-        printData(buff);
+        printData(buff, pedArray);
     }
-    
+
+    printf("Pedestal tuning summary (Meaningless for non-pedestal data)\n");
+    char qieReg[2][7][8];
+    for(int qieSet = 0; qieSet < 2; ++qieSet)
+    {
+        for(int i = 0; i < 6; ++i)
+        {
+            int iChan = i + qieSet*6;
+            double averagePeds[4] = {pedArray[iChan][0]*4.0/512.0, pedArray[iChan][1]*4.0/512.0, pedArray[iChan][2]*4.0/512.0, pedArray[iChan][3]*4.0/512.0};
+            double average = (averagePeds[0] + averagePeds[1] + averagePeds[2] + averagePeds[3])/4.0;
+            printf("Average: %lf\n", average);
+            int corr[4];
+            for(int i = 0; i < 4; ++i)
+            {
+                double tmpCorr = (average - averagePeds[i])/0.42;
+                if(tmpCorr >= 0.0) corr[i] = floor(tmpCorr + 0.5);
+                else               corr[i] = ceil(tmpCorr - 0.5);
+            }
+            printf("Channel: %d\n", iChan + 1);
+            printf("%10s %10s %10s %10s\n", "Cap0", "Cap1", "Cap2", "Cap3");
+            printf("%10.2lf %10.2lf %10.2lf %10.2lf\n", averagePeds[0], averagePeds[1], averagePeds[2], averagePeds[3]);
+            printf("%10d %10d %10d %10d\n", corr[0], corr[1], corr[2], corr[3]);
+            char c[3] = {0x00, 0x00, 0x00};
+        
+            unsigned int ucorr[4];
+            unsigned int scorr[4];
+            //corr[0] = 5;
+            //corr[1] = 5;
+            //corr[2] = 5;
+            //corr[3] = 5;
+            for(int i = 0; i < 4; ++i)
+            {
+                ucorr[i] = abs(corr[i]);
+                scorr[i] = (corr[i] > 0)?1:0;
+            }
+            printf("%d %d %d %d\n", ucorr[0], ucorr[1], ucorr[2], ucorr[3]);
+            printf("%d %d %d %d\n", scorr[0], scorr[1], scorr[2], scorr[3]);
+            c[0] = 0x26 | ((ucorr[0] & 0x3) << 6);
+            c[1] = ((ucorr[0] >> 2) & 0x1) | (scorr[0] * 0x02) | ((ucorr[1] << 2) & 0x1c) |  (scorr[1] * 0x20) | ((ucorr[2] << 6) & 0xc0);
+            c[2] = ((ucorr[2] >> 2) & 0x1) | (scorr[2] * 0x02) | ((ucorr[3] << 2) & 0x1c) |  (scorr[3] * 0x20);
+
+            printf("config words: e5 1f %02x %02x %02x 00 00 80\n", 0xff & c[0], 0xff & c[1], 0xff & c[2]);
+
+            qieReg[qieSet][(5-i) + 1][0] = 0xe5;
+            qieReg[qieSet][(5-i) + 1][1] = 0x1f;
+            qieReg[qieSet][(5-i) + 1][2] = c[0];
+            qieReg[qieSet][(5-i) + 1][3] = c[1];
+            qieReg[qieSet][(5-i) + 1][4] = c[2];
+            qieReg[qieSet][(5-i) + 1][5] = 0x00;
+            qieReg[qieSet][(5-i) + 1][6] = 0x00;
+            qieReg[qieSet][(5-i) + 1][7] = 0x80;
+        }
+    }
+    qieReg[0][0][7]= 0x30;
+    sub_i2c_write(sh, bridgeAddr, 0, 0, ((char *)(qieReg[0])) + 7, 49);
+    qieReg[1][0][7]= 0x31;
+    for(int i = 0; i < 7; ++i) 
+    {
+        for(int j = 0; j < 8; ++j) printf("%02x ", 0xff & qieReg[1][i][j]);
+        printf("\n");
+    }
+    printf("\n");
+    usleep(10000);
+    sub_i2c_write(sh, bridgeAddr, 0, 0, ((char *)(qieReg[1])) + 7, 49);
+    printf("I2C STatus: %x\n", sub_i2c_status);
 }
 
-void printData(char * buff)
+void printData(char * buff, int pedArray[12][4])
 {
 //000: f6 70 f6 70 f6 70 f6 70
 //008: f6 70 f4 70 f4 72 f6 70
 //016: f4 72 f6 70 f4 70 f4 70
 //024: 34
 
-    const char BITMASK_TDC = 0x70;  const int OFFSET_TDC = 4;
-    const char BITMASK_ADC = 0x0e;  const int OFFSET_ADC = 1;
+    const char BITMASK_TDC = 0x07;  const int OFFSET_TDC = 4;
+    const char BITMASK_ADC = 0x07;  const int OFFSET_ADC = 1;
     const char BITMASK_EXP = 0x01;  const int OFFSET_EXP = 0;
-    const char BITMASK_CAP = 0x80;  const int OFFSET_CAP = 7;
+    const char BITMASK_CAP = 0x01;  const int OFFSET_CAP = 7;
 
     bool fifoEmpty = (bool)buff[24] & 0x80;
     bool fifoFull  = (bool)buff[24] & 0x40;
@@ -762,19 +831,21 @@ void printData(char * buff)
 
     for(int i = 0; i < 12; ++i)
     {
-        char adc1 = (buff[(11-i)*2 + 1] & BITMASK_ADC) >> OFFSET_ADC;
-        char adc0 = (buff[(11-i)*2    ] & BITMASK_ADC) >> OFFSET_ADC;
-        char tdc1 = (buff[(11-i)*2 + 1] & BITMASK_TDC) >> OFFSET_TDC;
-        char tdc0 = (buff[(11-i)*2    ] & BITMASK_TDC) >> OFFSET_TDC;
-        char cap1 = (buff[(11-i)*2 + 1] & BITMASK_CAP) >> OFFSET_CAP;
-        char cap0 = (buff[(11-i)*2    ] & BITMASK_CAP) >> OFFSET_CAP;
-        char exp1 = (buff[(11-i)*2 + 1] & BITMASK_EXP) >> OFFSET_EXP;
-        char exp0 = (buff[(11-i)*2    ] & BITMASK_EXP) >> OFFSET_EXP;
+        char adc1 = (buff[(11-i)*2 + 1] >> OFFSET_ADC) & BITMASK_ADC;
+        char adc0 = (buff[(11-i)*2    ] >> OFFSET_ADC) & BITMASK_ADC;
+        char tdc1 = (buff[(11-i)*2 + 1] >> OFFSET_TDC) & BITMASK_TDC;
+        char tdc0 = (buff[(11-i)*2    ] >> OFFSET_TDC) & BITMASK_TDC;
+        char cap1 = (buff[(11-i)*2 + 1] >> OFFSET_CAP) & BITMASK_CAP;
+        char cap0 = (buff[(11-i)*2    ] >> OFFSET_CAP) & BITMASK_CAP;
+        char exp1 = (buff[(11-i)*2 + 1] >> OFFSET_EXP) & BITMASK_EXP;
+        char exp0 = (buff[(11-i)*2    ] >> OFFSET_EXP) & BITMASK_EXP;
 
         adc[i] =   interleave(adc0, adc1);
         tdc[i] =   interleave(tdc0, tdc1);
         capId[i] = interleave(cap0, cap1);
         range[i] = interleave(exp0, exp1);
+
+        pedArray[i][0x3 & int(capId[i])] += int(0x3f & adc[i]);
     }
 
     printf("FIFO empty: %1d   FIFO full: %1d   clk counter: %6d\n", fifoEmpty, fifoFull, clkctr);
