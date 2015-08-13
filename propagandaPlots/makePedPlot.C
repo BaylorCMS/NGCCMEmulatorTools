@@ -14,17 +14,29 @@ int main()
     TH1D *peds = new TH1D("peds", "pedestals", 20, 0, 10);
     TH1D *rmss = new TH1D("rmss", "pedestal rms", 10, 0, 1);
 
+    bool first = true;
+    TCancas c3("c3", "c3", 800, 800);
+
     for(int i = 0; i < 36; i++)
     {
+        c2->cd();
         char hname[128];
         sprintf(hname, "h%d", i + 18);
         hped[i] = (TH1D*)f->Get(hname);
 
         hped[i]->GetXaxis()->SetTitle("ADC counts");
-        hped[i]->GetXaxis()->SetRangeUser(0, 20);
+        hped[i]->GetXaxis()->SetRangeUser(0, 40);
         hped[i]->SetTitle(0);
 
+        if(first)
+        {
+            hped[i]->Draw();
+            first = false;
+        }
+        else hped[i]->Draw("same");
+
         TCanvas c1("c1","c1", 800, 800);
+        c1->cd();
         hped[i]->Draw();
 
         char pname[128];

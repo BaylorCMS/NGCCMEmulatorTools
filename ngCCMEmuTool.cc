@@ -746,7 +746,7 @@ void readQIECard(sub_handle sh, int iRM, int iSlot)
         printData(buff, pedArray);
     }
 
-    printf("Pedestal tuning summary (Meaningless for non-pedestal data)\n");
+    /*printf("Pedestal tuning summary (Meaningless for non-pedestal data)\n");
     char qieReg[2][7][8];
     for(int qieSet = 0; qieSet < 2; ++qieSet)
     {
@@ -809,7 +809,7 @@ void readQIECard(sub_handle sh, int iRM, int iSlot)
     printf("\n");
     usleep(10000);
     sub_i2c_write(sh, bridgeAddr, 0, 0, ((char *)(qieReg[1])) + 7, 49);
-    printf("I2C STatus: %x\n", sub_i2c_status);
+    printf("I2C STatus: %x\n", sub_i2c_status);*/
 }
 
 void printData(char * buff, int pedArray[12][4])
@@ -890,9 +890,10 @@ void setHV(sub_handle sh, int iRM, int chan, double voltage)
         mux_chan = 0x01;
         break;
     case 3:
+        mux_chan = 0x20;
         break;
     case 4:
-        //mux_chan = 0x01;
+        mux_chan = 0x02;
         break;        
     }
 
@@ -960,7 +961,7 @@ void getHVCurrent(sub_handle sh, int iRM, int chan)
     case 3:
         break;
     case 4:
-        //mux_chan = 0x01;
+        mux_chan = 0x01;
         break;        
     }
 
