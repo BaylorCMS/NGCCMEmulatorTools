@@ -528,23 +528,25 @@ void testQIECard(sub_handle sh, int iRM, int iSlot)
     //Read temperature
     buff[0] = 0xe3;
     sub_i2c_write(sh, SADDR_TEMP, 0, 0, buff, 1);
+    //usleep(10000);
     sub_i2c_read(sh, SADDR_TEMP, 0, 0, buff, 3);
     //Convert reading into temperature
-    int st = ((0x3f & int(buff[1])) << 8) + (0xff & int(buff[0]));
-    double temp = -46.85 + 175.72 * st / (1 << 15);
+    int st = (0x3f & int(buff[1])) + ((0xff & int(buff[0])) << 6);
+    double temp = -46.85 + 175.72 * double(st) / double(1 << 14);
     //Check if temp reading is reasonable
-    if(sub_i2c_status == 0x00 && temp > 0 && temp < 100) printf("PASS: temp - %0.2f C\n", temp);
+    if(sub_i2c_status == 0x00/* && temp > 0 && temp < 100*/) printf("PASS: temp - %0.2f C --- %i, %x, %x, %x\n", temp, st, buff[0], buff[1], buff[2]);
     else                                                 printf("FAILED: temp\n");
     usleep(100000);
     //Read Humidity
-    buff[0] = 0xe5;
+    buff[0] = 0xf5;
     sub_i2c_write(sh, SADDR_TEMP, 0, 0, buff, 1);
+    usleep(10000);
     sub_i2c_read(sh, SADDR_TEMP, 0, 0, buff, 3);
     //Convert reading to humidity reading
-    int shu = ((0x3f & int(buff[1])) << 8) + (0xff & int(buff[0]));
-    double humidity = -6.0 + 125.0 * shu / (1 << 15);
+    int shu = ((0x3f & int(buff[1])) >> 2) + ((0x3f & int(buff[0])) << 6);
+    double humidity = -6.0 + 125.0 * double(shu) / double(1 << 12);
     // chdeck that hmidity is in reasonable range 
-    if(sub_i2c_status == 0x00 && temp > 0 && temp < 100) printf("PASS: humidity - %0.2f%%\n", humidity);
+    if(sub_i2c_status == 0x00/* && temp > 0 && temp < 100*/) printf("PASS: humidity - %0.2f%%\n", humidity);
     else                                                 printf("FAILED: humidity\n");
 
     //buff[0] = BRIDGE_REG_CLKCTR;
@@ -708,7 +710,7 @@ void readQIECard(sub_handle sh, int iRM, int iSlot)
     buff[4] = 0x00;
     sub_i2c_write(sh, bridgeAddr, 0, 0, buff, 5);
 
-    //Activate spy bugger fill
+    //Activate spy buffer fill
     buff[0] = IGLOO2_REG_CNTRREG;
     buff[1] = 0x02; //fill spy buffer
     buff[2] = 0x00;
